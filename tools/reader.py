@@ -9,6 +9,7 @@ Cloud reader for t.me/justsomecalls public web preview.
 """
 
 import json
+import html as htmlmod
 import re
 import sys
 import urllib.request
@@ -58,15 +59,7 @@ def parse(html):
             text = mtext.group(1)
             text = re.sub(r"<br\s*/?>", "\n", text)
             text = re.sub(r"<[^>]+>", "", text)
-            for a, b in [
-                ("&amp;", "&"),
-                ("&lt;", "<"),
-                ("&gt;", ">"),
-                ("&quot;", '"'),
-                ("&#39;", "'"),
-                ("&#x27;", "'"),
-            ]:
-                text = text.replace(a, b)
+            text = htmlmod.unescape(text)
             text = re.sub(r"[ \t]+\n", "\n", text).strip()
         messages.append({"id": post_id, "date": date, "text": text})
     return messages
