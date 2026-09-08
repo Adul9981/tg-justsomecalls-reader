@@ -2,9 +2,8 @@
 """
 翻译并发布：读取 data/ 中新消息 -> 翻译为简体中文 -> 发到 Telegram 中文频道。
 
-翻译引擎（自动选择）:
-  1) 环境变量 OPENAI_API_KEY 存在 -> OpenAI 兼容 chat completions（质量优先）
-  2) 否则 -> Google 免费翻译接口（无需密钥，质量一般）
+翻译引擎:
+  DeepSeek API（OpenAI 兼容），环境变量 DEEPSEEK_API_KEY + DEEPSEEK_MODEL。
 
 去重：data/published.ndjson 记录已发布消息 id。
 """
@@ -19,8 +18,9 @@ import urllib.request
 
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 CHAT = os.environ.get("TARGET_CHAT", "@allcallsad")
-OPENAI_KEY = os.environ.get("OPENAI_API_KEY", "")
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+DEEPSEEK_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "data")
@@ -37,9 +37,9 @@ def tg_api(method, params):
         return json.loads(r.read().decode())
 
 
-def translate_openai(text):
+def translate_deepseek(text):
     body = {
-        "model": OPENAI_MODEL,
+        "model": DEEPSEEK_MODEL,
         "messages": [
             {
                 "role": "system",
@@ -52,42 +52,24 @@ def translate_openai(text):
             },
             {"role": "user", "content": text},
         ],
-        "temperature": 0.2,
+        "temperature": 0.3,
+        "max_tokens": 4000,
     }
     req = urllib.request.Request(
-        "https://api.openai.com/v1/chat/completions",
+        DEEPSEEK_URL,
         data=json.dumps(body).encode(),
         headers={
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {OPENAI_KEY}",
+            "Authorization": f"Bearer {DEEPSEEK_KEY}",
         },
     )
-    with urllib.request.urlopen(req, timeout=60) as r:
+    with urllib.request.urlopen(req, timeout=90) as r:
         result = json.loads(r.read().decode())
     return result["choices"][0]["message"]["content"].strip()
 
 
-def translate_google(text):
-    url = (
-        "https://translate.googleapis.com/translate_a/single"
-        "?client=gtx&sl=en&tl=zh-CN&dt=t&q="
-        + urllib.parse.quote(text)
-    )
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        result = json.loads(r.read().decode())
-    return "".join(part[0] for part in result[0])
-
-
 def translate(text):
-    if not text or not text.strip():
-        return ""
-    if OPENAI_KEY:
-        try:
-            return translate_openai(text)
-        except Exception as e:
-            print("OPENAI_FAIL fallback-to-google", type(e).__name__, e)
-    return translate_google(text)
+    return translate_deepseek(text)
 
 
 def load_published():
@@ -142,7 +124,15 @@ def main():
                 continue
             body = urls[0]
         else:
-            body = translate(raw)
+            try:
+                body = translate(raw)
+            except Exception as e:
+                print("DEEPSEEK_FAIL", m["id"], type(e).__name__, e)
+                failed.append({"id": m["id"], "error": f"{type(e).__name__}: {e}"})
+                if len(failed) >= 3:
+                    break
+                continue
+        print("TRANSLATED", m["id"], "|", (body or "")[:120].replace("\n", " "))
         body = (body or "").strip()
         if not body:
             continue
