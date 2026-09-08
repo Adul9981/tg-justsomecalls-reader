@@ -1,0 +1,16 @@
+name: probe
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 每 30 分钟拉一次（先用探测任务验证；后续换成正式同步任务）
+    - cron: "*/30 * * * *"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch public channel preview
+        run: python3 tools/reader.py --probe
