@@ -1,0 +1,25 @@
+name: backfill
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Delete media-less posts and mark for republish
+        run: python3 tools/backfill_media.py
+      - name: Commit state
+        run: |
+          git config user.name "cloud-reader-bot"
+          git config user.email "actions@github.com"
+          git add data
+          git diff --cached --quiet || git commit -m "backfill media: mark posts for republish"
+          git push
