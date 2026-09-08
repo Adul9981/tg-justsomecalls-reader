@@ -21,6 +21,7 @@ CHAT = os.environ.get("TARGET_CHAT", "@allcallsad")
 DEEPSEEK_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
 DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
+USAGE = {"prompt_tokens": 0, "completion_tokens": 0}
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "data")
@@ -65,6 +66,9 @@ def translate_deepseek(text):
     )
     with urllib.request.urlopen(req, timeout=90) as r:
         result = json.loads(r.read().decode())
+    usage = result.get("usage") or {}
+    USAGE["prompt_tokens"] += int(usage.get("prompt_tokens", 0) or 0)
+    USAGE["completion_tokens"] += int(usage.get("completion_tokens", 0) or 0)
     return result["choices"][0]["message"]["content"].strip()
 
 
@@ -156,7 +160,18 @@ def main():
             if len(failed) >= 3:
                 break
 
-    print(json.dumps({"ok": not failed, "new": len(pending), "sent": sent, "failed": failed}, ensure_ascii=False))
+    print(
+        json.dumps(
+            {
+                "ok": not failed,
+                "new": len(pending),
+                "sent": sent,
+                "failed": failed,
+                "deepseekUsage": USAGE,
+            },
+            ensure_ascii=False,
+        )
+    )
 
 
 if __name__ == "__main__":
