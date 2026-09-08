@@ -30,13 +30,14 @@ def main():
 
     print("TAG_COUNTS", tags)
 
-    # 抓取任意含 photo/video 的整段 HTML 片段，便于人工确认结构
+    # 折叠空白后打印媒体标签附近 HTML，便于确认取图方式
+    compact = re.sub(r"\s+", " ", html)
     shown = 0
-    for m in re.finditer(r'<div class="tgme_widget_message_wrap.*?</div>\s*</div>\s*</div>', html, re.S):
-        block = m.group(0)
-        if ("photo" in block or "video" in block) and shown < 4:
-            print("BLOCK_START", block[:1400].replace("\n", " "))
-            shown += 1
+    for m in re.finditer(r".{260}tgme_widget_message_photo.{520}", compact):
+        print("MEDIA_WINDOW", m.group(0))
+        shown += 1
+        if shown >= 5:
+            break
 
 
 if __name__ == "__main__":
