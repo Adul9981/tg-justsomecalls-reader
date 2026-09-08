@@ -51,15 +51,17 @@ def main():
         if "&#036;" in text or "&#x24;" in text:
             new_text = text.replace("&#036;", "$").replace("&#x24;", "$")
             try:
-                api(
-                    "editMessageText",
-                    {
-                        "chat_id": f"@{CHANNEL}",
-                        "message_id": int(msg_id),
-                        "text": new_text,
-                        "disable_web_page_preview": True,
-                    },
-                )
+                params = {
+                    "chat_id": f"@{CHANNEL}",
+                    "message_id": int(msg_id),
+                }
+                if "tgme_widget_message_photo_wrap" in chunk:
+                    params["caption"] = new_text
+                    api("editMessageCaption", params)
+                else:
+                    params["text"] = new_text
+                    params["disable_web_page_preview"] = True
+                    api("editMessageText", params)
                 fixed += 1
                 print("FIXED", msg_id)
             except Exception as e:
