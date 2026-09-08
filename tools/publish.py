@@ -9,6 +9,7 @@
 """
 
 import json
+import mimetypes
 import os
 import re
 import sys
@@ -36,6 +37,65 @@ def tg_api(method, params):
     )
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.loads(r.read().decode())
+
+
+def tg_upload(method, fields, file_field, filename, filedata, content_type):
+    """以 multipart/form-data 上传媒体文件到 Bot API。"""
+    boundary = "----TgMirror" + os.urandom(8).hex()
+    body = bytearray()
+
+    def add_field(name, value):
+        body.extend(
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n".encode()
+        )
+
+    def add_file():
+        body.extend(
+            (
+                f"--{boundary}\r\n"
+                f"Content-Disposition: form-data; name=\"{file_field}\"; filename=\"{filename}\"\r\n"
+                f"Content-Type: {content_type}\r\n\r\n"
+            ).encode()
+        )
+        body.extend(filedata)
+        body.extend(b"\r\n")
+
+    for k, v in fields.items():
+        add_field(k, str(v))
+    add_file()
+    body.extend(f"--{boundary}--\r\n".encode())
+
+    req = urllib.request.Request(
+        f"https://api.telegram.org/bot{TOKEN}/{method}",
+        data=bytes(body),
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )
+    with urllib.request.urlopen(req, timeout=180) as r:
+        return json.loads(r.read().decode())
+
+
+def fetch_media(url):
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 Chrome/124.0 Safari/537.36"
+            )
+        },
+    )
+    with urllib.request.urlopen(req, timeout=90) as r:
+        data = r.read()
+        ctype = r.headers.get("Content-Type") or "image/jpeg"
+    return data, ctype
+
+
+def split_text(text, limit=900):
+    chunks = []
+    while text:
+        chunks.append(text[:limit])
+        text = text[limit:]
+    return chunks
 
 
 def translate_deepseek(text):
@@ -136,24 +196,55 @@ def main():
                 if len(failed) >= 3:
                     break
                 continue
-        print("TRANSLATED", m["id"], "|", (body or "")[:120].replace("\n", " "))
         body = (body or "").strip()
-        if not body:
-            continue
+        chunks = split_text(body) if body else []
+        media = m.get("media") or []
+        print("TRANSLATED", m["id"], "|", body[:120].replace("\n", " ") if body else "(media only)", "media=", len(media))
         try:
-            tg_api(
-                "sendMessage",
-                {
-                    "chat_id": CHAT,
-                    "text": body[:4000],
-                    "disable_web_page_preview": True,
-                },
-            )
+            media_ok = 0
+            if media:
+                for idx, item in enumerate(media):
+                    if item.get("type") != "photo":
+                        continue
+                    try:
+                        filedata, ctype = fetch_media(item["url"])
+                    except Exception as e:
+                        print("MEDIA_DL_FAIL", m["id"], idx, type(e).__name__, e)
+                        continue
+                    if len(filedata) > 10 * 1024 * 1024:
+                        print("MEDIA_TOO_BIG", m["id"], idx, len(filedata))
+                        continue
+                    ext = mimetypes.guess_extension(ctype.split(";")[0].strip()) or ".jpg"
+                    filename = f"justsomecalls-{m['id'].split('/')[-1]}-{idx}{ext}"
+                    fields = {"chat_id": CHAT, "disable_web_page_preview": True}
+                    if idx == 0 and chunks:
+                        fields["caption"] = chunks.pop(0)
+                    tg_upload("sendPhoto", fields, "photo", filename, filedata, ctype)
+                    media_ok += 1
+                    time.sleep(3)
+            for chunk in chunks:
+                tg_api(
+                    "sendMessage",
+                    {
+                        "chat_id": CHAT,
+                        "text": chunk[:4000],
+                        "disable_web_page_preview": True,
+                    },
+                )
+                time.sleep(3)
             with open(PUBLISHED, "a", encoding="utf-8") as f:
-                f.write(json.dumps({"id": m["id"], "publishedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}) + "\n")
+                f.write(
+                    json.dumps(
+                        {
+                            "id": m["id"],
+                            "publishedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                            "mediaSent": media_ok,
+                        }
+                    )
+                    + "\n"
+                )
             published.add(m["id"])
             sent += 1
-            time.sleep(3)  # 频道限流保护
         except Exception as e:
             failed.append({"id": m["id"], "error": f"{type(e).__name__}: {e}"})
             print("FAIL", m["id"], type(e).__name__, e)
