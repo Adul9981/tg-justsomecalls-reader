@@ -1,0 +1,30 @@
+name: sync
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 每 30 分钟在云端抓取一次频道公开预览（私有仓库免费额度内可长期跑）
+    - cron: "*/30 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch and archive latest posts
+        run: python3 tools/sync.py
+      - name: Commit snapshot
+        run: |
+          git config user.name "cloud-reader-bot"
+          git config user.email "actions@github.com"
+          git add data
+          git diff --cached --quiet || git commit -m "snapshot $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push
