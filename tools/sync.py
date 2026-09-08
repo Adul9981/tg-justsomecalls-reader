@@ -53,11 +53,39 @@ def main():
         sys.exit(1)
 
     known = load_existing()
+    known_ids = set(known.keys())
+    prev_max = None
+    if known_ids:
+        prev_max = max(int(i.split("/")[-1]) for i in known_ids)
+
     new = []
     for m in messages:
-        if m["id"] not in known:
+        if m["id"] not in known_ids:
+            known_ids.add(m["id"])
             known[m["id"]] = m
             new.append(m)
+
+    # 若两次运行之间发帖超过一页，向更早分页补抓，直到接上已存记录
+    pages = 1
+    while pages < 60 and prev_max is not None:
+        cur_min = min(int(m["id"].split("/")[-1]) for m in messages)
+        if cur_min <= prev_max + 1:
+            break
+        try:
+            _, older_html = fetch_page(before=messages[0]["id"])
+        except Exception as e:
+            print("BACKFILL_FAIL", type(e).__name__, e)
+            break
+        older = parse(older_html)
+        if not older:
+            break
+        pages += 1
+        for m in older:
+            if m["id"] not in known_ids:
+                known_ids.add(m["id"])
+                known[m["id"]] = m
+                new.append(m)
+        messages = older
 
     # latest.json 保留最新 200 条（含历史已知，便于回看）
     latest = sorted(known.values(), key=lambda x: int(x["id"].split("/")[-1]))[-200:]
@@ -83,6 +111,7 @@ def main():
             ids[-1].split("/")[-1],
         )
     )
+    print("pagesFetched=", pages)
     print("checkedAt=", datetime.now(timezone.utc).isoformat())
 
 
