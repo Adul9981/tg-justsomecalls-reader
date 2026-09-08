@@ -17,10 +17,17 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      PUBLISH_ENABLED: ${{ vars.PUBLISH_ENABLED }}
     steps:
       - uses: actions/checkout@v4
       - name: Fetch and archive latest posts
         run: python3 tools/sync.py
+      - name: Translate and publish new posts
+        if: env.PUBLISH_ENABLED == 'true' && env.TELEGRAM_BOT_TOKEN != ''
+        run: python3 tools/publish.py
       - name: Commit snapshot
         run: |
           git config user.name "cloud-reader-bot"
