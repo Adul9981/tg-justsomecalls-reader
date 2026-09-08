@@ -59,11 +59,22 @@ def main():
         prev_max = max(int(i.split("/")[-1]) for i in known_ids)
 
     new = []
+    enriched = []
+
+    def absorb(m):
+        mid = m["id"]
+        if mid in known_ids:
+            old = known[mid]
+            if m.get("media") and not old.get("media"):
+                old["media"] = m["media"]
+                enriched.append(mid)
+            return
+        known_ids.add(mid)
+        known[mid] = m
+        new.append(m)
+
     for m in messages:
-        if m["id"] not in known_ids:
-            known_ids.add(m["id"])
-            known[m["id"]] = m
-            new.append(m)
+        absorb(m)
 
     # 若两次运行之间发帖超过一页，向更早分页补抓，直到接上已存记录
     pages = 1
@@ -81,10 +92,7 @@ def main():
             break
         pages += 1
         for m in older:
-            if m["id"] not in known_ids:
-                known_ids.add(m["id"])
-                known[m["id"]] = m
-                new.append(m)
+            absorb(m)
         messages = older
 
     # latest.json 保留最新 200 条（含历史已知，便于回看）
@@ -98,14 +106,21 @@ def main():
         with open(HISTORY, "a", encoding="utf-8") as f:
             for m in new_sorted:
                 f.write(json.dumps(m, ensure_ascii=False) + "\n")
+    elif enriched:
+        # 老记录补上媒体信息：一次性重写历史文件（此后新记录都自带 media，不再重写）
+        all_sorted = sorted(known.values(), key=lambda x: int(x["id"].split("/")[-1]))
+        with open(HISTORY, "w", encoding="utf-8") as f:
+            for m in all_sorted:
+                f.write(json.dumps(m, ensure_ascii=False) + "\n")
 
     ids = [m["id"] for m in messages]
     print(
-        "OK http=%s pageMsgs=%s new=%s total=%s range=%s..%s"
+        "OK http=%s pageMsgs=%s new=%s enriched=%s total=%s range=%s..%s"
         % (
             status,
             len(messages),
             len(new),
+            len(enriched),
             len(known),
             ids[0].split("/")[-1],
             ids[-1].split("/")[-1],
