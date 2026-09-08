@@ -61,7 +61,16 @@ def parse(html):
             text = re.sub(r"<[^>]+>", "", text)
             text = htmlmod.unescape(text)
             text = re.sub(r"[ \t]+\n", "\n", text).strip()
-        messages.append({"id": post_id, "date": date, "text": text})
+        # 图片：tgme_widget_message_photo_wrap 的 background-image 即原图/高清图
+        media = []
+        for url in re.findall(
+            r"class=\"tgme_widget_message_photo_wrap[^>]*style=\"[^\"]*background-image:url\('([^']+)'\)",
+            chunk,
+        ):
+            media.append({"type": "photo", "url": url})
+        messages.append(
+            {"id": post_id, "date": date, "text": text, "media": media}
+        )
     return messages
 
 
