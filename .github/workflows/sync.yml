@@ -2,12 +2,10 @@ name: sync
 
 on:
   workflow_dispatch:
-  schedule:
-    # 每 15 分钟在云端抓取并发布（公开仓库免费额度内可长期跑）
-    - cron: "*/15 * * * *"
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: sync
@@ -35,3 +33,20 @@ jobs:
           git add data
           git diff --cached --quiet || git commit -m "snapshot $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           git push
+
+  keepalive:
+    # 自我接力：本轮结束后等待 LOOP_SECONDS 秒再触发下一轮，
+    # 绕开 GitHub cron 调度不可靠的问题
+    needs: sync
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Schedule next round
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LOOP_SECONDS: ${{ vars.LOOP_SECONDS || '840' }}
+        run: |
+          echo "waiting ${LOOP_SECONDS}s before next round"
+          sleep "${LOOP_SECONDS}"
+          gh workflow run sync.yml --repo "${{ github.repository }}"
