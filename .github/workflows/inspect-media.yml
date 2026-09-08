@@ -1,0 +1,13 @@
+name: inspect-media
+
+on:
+  workflow_dispatch:
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect media markup
+        run: python3 tools/inspect_media.py
