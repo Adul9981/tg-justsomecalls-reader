@@ -9,6 +9,7 @@
 """
 
 import json
+import html as htmlmod
 import mimetypes
 import os
 import re
@@ -180,7 +181,7 @@ def main():
     sent = 0
     failed = []
     for m in pending:
-        raw = clean_text(m.get("text") or "")
+        raw = htmlmod.unescape(clean_text(m.get("text") or ""))
         if not raw:
             # 无正文（纯图片/转发）时仍发原链接便于人工查看
             urls = re.findall(r"https?://[^\s]+", m.get("text") or "")
