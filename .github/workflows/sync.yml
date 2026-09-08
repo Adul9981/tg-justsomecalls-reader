@@ -47,6 +47,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           LOOP_SECONDS: ${{ vars.LOOP_SECONDS || '840' }}
         run: |
+          # 单链保险：已有其他运行在排队/执行时，本轮不再触发，避免多链重复
+          active=$(gh run list --workflow=sync.yml --limit 10 --json databaseId,status --jq \
+            --arg self "$GITHUB_RUN_ID" \
+            '[.[] | select((.databaseId|tostring) != $self and (.status == "in_progress" or .status == "queued"))] | length')
+          echo "active other runs: ${active}"
+          if [ "${active}" -gt 0 ]; then
+            echo "skip scheduling: another round already active"
+            exit 0
+          fi
           echo "waiting ${LOOP_SECONDS}s before next round"
           sleep "${LOOP_SECONDS}"
           gh workflow run sync.yml --repo "${{ github.repository }}"
